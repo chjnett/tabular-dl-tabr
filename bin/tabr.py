@@ -251,20 +251,26 @@ class Model(nn.Module):
         batch_size, d_main = k.shape
         device = k.device
         with torch.no_grad():
-            if self.search_index is None:
-                self.search_index = (
-                    faiss.GpuIndexFlatL2(faiss.StandardGpuResources(), d_main)
-                    if device.type == 'cuda'
-                    else faiss.IndexFlatL2(d_main)
+            if device.type == 'cpu':
+                # Pure PyTorch fallback on CPU to prevent faiss segfault on macOS CPU
+                dists = torch.cdist(k, candidate_k, p=2.0)
+                dists_sq = dists.square()
+                distances, context_idx = torch.topk(
+                    dists_sq, k=context_size + (1 if is_train else 0), dim=-1, largest=False
                 )
-            # Updating the index is much faster than creating a new one.
-            self.search_index.reset()
-            self.search_index.add(candidate_k)  # type: ignore[code]
-            distances: Tensor
-            context_idx: Tensor
-            distances, context_idx = self.search_index.search(  # type: ignore[code]
-                k, context_size + (1 if is_train else 0)
-            )
+            else:
+                if self.search_index is None:
+                    self.search_index = (
+                        faiss.GpuIndexFlatL2(faiss.StandardGpuResources(), d_main)
+                        if device.type == 'cuda'
+                        else faiss.IndexFlatL2(d_main)
+                    )
+                # Updating the index is much faster than creating a new one.
+                self.search_index.reset()
+                self.search_index.add(candidate_k)  # type: ignore[code]
+                distances, context_idx = self.search_index.search(  # type: ignore[code]
+                    k, context_size + (1 if is_train else 0)
+                )
             if is_train:
                 # NOTE: to avoid leakage, the index i must be removed from the i-th row,
                 # (because of how candidate_k is constructed).
@@ -338,13 +344,25 @@ def main(
     )
 
     # >>> model
-    model = Model(
-        n_num_features=dataset.n_num_features,
-        n_bin_features=dataset.n_bin_features,
-        cat_cardinalities=dataset.cat_cardinalities(),
-        n_classes=dataset.n_classes(),
-        **C.model,
-    )
+    model_config = dict(C.model)
+    model_type = model_config.pop('type', 'tabr')
+    if model_type == 'gate_rm':
+        from lib.gate_rm import GateRMModel
+        model = GateRMModel(
+            n_num_features=dataset.n_num_features,
+            n_bin_features=dataset.n_bin_features,
+            cat_cardinalities=dataset.cat_cardinalities(),
+            n_classes=dataset.n_classes(),
+            **model_config,
+        )
+    else:
+        model = Model(
+            n_num_features=dataset.n_num_features,
+            n_bin_features=dataset.n_bin_features,
+            cat_cardinalities=dataset.cat_cardinalities(),
+            n_classes=dataset.n_classes(),
+            **model_config,
+        )
     report['n_parameters'] = lib.get_n_parameters(model)
     logger.info(f'n_parameters = {report["n_parameters"]}')
     report['prediction_type'] = None if dataset.is_regression else 'logits'
@@ -362,6 +380,8 @@ def main(
         return (
             'label_encoder' in module_name
             or 'label_encoder' in parameter_name
+            or parameter_name.endswith('.r')
+            or parameter_name.endswith('.s')
             or lib.default_zero_weight_decay_condition(
                 module_name, module, parameter_name, parameter
             )
@@ -413,14 +433,38 @@ def main(
             None if candidate_indices is train_indices else candidate_indices,
         )
 
-        return model(
-            x_=x,
-            y=y if is_train else None,
-            candidate_x_=candidate_x,
-            candidate_y=candidate_y,
-            context_size=C.context_size,
-            is_train=is_train,
-        ).squeeze(-1)
+        if model_type == 'gate_rm':
+            if is_train:
+                ensemble_idx = torch.arange(len(idx), device=device) % model.n_ensembles
+                out = model(
+                    x_=x,
+                    y=y,
+                    candidate_x_=candidate_x,
+                    candidate_y=candidate_y,
+                    context_size=C.context_size,
+                    is_train=is_train,
+                    ensemble_idx=ensemble_idx,
+                )
+            else:
+                out = model(
+                    x_=x,
+                    y=None,
+                    candidate_x_=candidate_x,
+                    candidate_y=candidate_y,
+                    context_size=C.context_size,
+                    is_train=is_train,
+                )
+                out = out.mean(dim=1)
+        else:
+            out = model(
+                x_=x,
+                y=y if is_train else None,
+                candidate_x_=candidate_x,
+                candidate_y=candidate_y,
+                context_size=C.context_size,
+                is_train=is_train,
+            )
+        return out.squeeze(-1)
 
     @torch.inference_mode()
     def evaluate(parts: list[str], eval_batch_size: int):

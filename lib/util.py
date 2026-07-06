@@ -432,6 +432,7 @@ def get_checkpoint_path(output: Union[str, Path]) -> Path:
 
 
 def load_checkpoint(output: Union[str, Path], **kwargs) -> JSONDict:
+    kwargs.setdefault('weights_only', False)
     return torch.load(get_checkpoint_path(output), **kwargs)
 
 
