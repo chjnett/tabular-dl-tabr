@@ -5,6 +5,7 @@ import http.server
 import socketserver
 import urllib.parse
 import re
+import time
 
 PORT = 8080
 LOG_FILE = r"C:\Users\uns\.gemini\antigravity\brain\6190524e-ffcf-4a6a-97ee-e140bc1498cf\.system_generated\tasks\task-395.log"
@@ -23,6 +24,7 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
                 "log_tail": "",
                 "status": "Running",
                 "progress_percent": 0,
+                "current_trial_status": "Starting...",
                 "trials": []
             }
             
@@ -41,6 +43,23 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
                     
             data["progress_percent"] = min(100, int((data["completed_trials"] / TOTAL_TRIALS) * 100))
             
+            # Calculate overall ETA
+            if os.path.exists(LOG_FILE):
+                start_time = os.path.getctime(LOG_FILE)
+                elapsed = time.time() - start_time
+                if data["completed_trials"] > 0:
+                    # Estimate based on completed trials
+                    avg_time = elapsed / data["completed_trials"]
+                    rem_trials = TOTAL_TRIALS - data["completed_trials"]
+                    eta_sec = rem_trials * avg_time
+                    h = int(eta_sec // 3600)
+                    m = int((eta_sec % 3600) // 60)
+                    data["overall_eta"] = f"{h}h {m}m"
+                else:
+                    data["overall_eta"] = "계산 중..."
+            else:
+                data["overall_eta"] = "N/A"
+            
             # Read log file
             if os.path.exists(LOG_FILE):
                 try:
@@ -49,6 +68,21 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
                         
                         # Get tail
                         data["log_tail"] = "".join(lines[-30:])
+                        
+                        # Parse granular progress
+                        data["current_trial_status"] = "Preparing next trial..."
+                        for line in reversed(lines[-50:]):
+                            if "Epoch" in line and "%|" in line:
+                                m = re.search(r'(Epoch\s+\d+):\s+(\d+)%\|.*?\|\s+(\d+/\d+)\s+\[(.*?)\]', line)
+                                if m:
+                                    time_info = m.group(4).replace('<', ' 남은시간: ')
+                                    data["current_trial_status"] = f"{m.group(1)} &mdash; {m.group(2)}% ({m.group(3)} iters) <span class='ml-3 text-amber-400 font-mono text-[11px]'>⏱️ {time_info}</span>"
+                                    break
+                                else:
+                                    m2 = re.search(r'(Epoch\s+\d+):\s+(\d+)%\|.*?\|\s+(\d+/\d+)', line)
+                                    if m2:
+                                        data["current_trial_status"] = f"{m2.group(1)} &mdash; {m2.group(2)}% ({m2.group(3)} iters)"
+                                        break
                         
                         # Extract trial history
                         trial_pattern = re.compile(r"Trial (\d+) finished with value: ([-.\d]+) and parameters: (\{.*?\})\.")
@@ -139,9 +173,16 @@ HTML_CONTENT = """<!DOCTYPE html>
                             <h3 class="text-sm font-medium text-slate-400">Overall Progress</h3>
                             <i data-lucide="activity" class="h-4 w-4 text-slate-400"></i>
                         </div>
-                        <div class="text-3xl font-bold" id="progress-text">0 / 30</div>
+                        <div class="flex items-end justify-between">
+                            <div class="text-3xl font-bold" id="progress-text">0 / 30</div>
+                            <div class="text-sm font-mono text-emerald-400 bg-emerald-400/10 px-2 py-1 rounded border border-emerald-400/20" id="overall-eta">남은 시간: 계산 중...</div>
+                        </div>
                         <div class="w-full bg-slate-800 rounded-full h-2.5 mt-4">
                             <div id="progress-bar" class="bg-blue-600 h-2.5 rounded-full" style="width: 0%"></div>
+                        </div>
+                        <div class="mt-3 flex items-center justify-between text-xs text-slate-400 border-t border-slate-700/50 pt-2">
+                            <span>Current Trial Status:</span>
+                            <span id="current-trial-status" class="font-mono text-blue-400">Waiting...</span>
                         </div>
                     </div>
                     
@@ -274,6 +315,14 @@ HTML_CONTENT = """<!DOCTYPE html>
                 // Update Progress
                 document.getElementById('progress-text').innerText = `${data.completed_trials} / 30`;
                 document.getElementById('progress-bar').style.width = `${data.progress_percent}%`;
+                
+                if (data.overall_eta) {
+                    document.getElementById('overall-eta').innerText = `총 남은 시간: ${data.overall_eta}`;
+                }
+                
+                if (data.current_trial_status) {
+                    document.getElementById('current-trial-status').innerHTML = data.current_trial_status;
+                }
                 
                 // Update Best Score & Benchmark
                 if (data.best_score !== null) {
