@@ -68,30 +68,20 @@ def test_data_leakage_mask_syntax():
 9. `Model` 클래스 상속 레이아웃 변경 시 주 데이터 처리 루프(`def main`)에 미치는 부작용 사전 탐지
 10. 아키텍처 전면 개량을 위한 독립 뼈대 파일 `lib/gate_rm.py` 생성 및 의존성 주입
 
-### 🧪 Micro Test Code: `tests/test_phase2_modularization.py`
+### 🧪 Micro Test Code: [`tests/test_phase2_modularization.py`](../tests/test_phase2_modularization.py)
 
-```python
-import torch
-import torch.nn as nn
+**✅ 구현 완료 — 8개 테스트 전체 PASSED**
 
-def test_encoder_predictor_interface_dimensions():
-    """인코더 출력 차원과 프리딕터 입력 요구 차원의 일치 여부 유닛 테스트"""
-    d_embedding = 64
-    n_features = 12
-    
-    # 앵커 임베딩 모형화
-    x_anchor_extracted = torch.randn(16, n_features, d_embedding)
-    # 기존 TabR은 피처 차원을 스퀴즈하거나 풀링하여 프리딕터에 진입함
-    x_flat = x_anchor_extracted.mean(dim=1)
-    
-    linear_predictor_input = nn.Linear(d_embedding, 1)
-    try:
-        out = linear_predictor_input(x_flat)
-    except RuntimeError as e:
-        pytest.fail(f"인터페이스 차원 결합 오류 발생: {e}")
-    assert out.shape == (16, 1)
-
-```
+| 테스트 함수 | 검증 내용 |
+|---|---|
+| `test_gate_rm_module_importable` | lib/gate_rm.py 6개 클래스 임포트 무결성 |
+| `test_encoder_predictor_interface_dimensions` | 인코더 [B,K,d] → flatten → 프리딕터 차원 호환 |
+| `test_feature_embedder_output_shape` | 수치형+이진형+범주형 혼합 임베딩 출력 형상 |
+| `test_gate_r_retrieval_residual` | Skip Connection 후 출력 형상 보존 |
+| `test_self_masking_blocks_diagonal` | masked_fill + softmax 자가 누수 수치 검증 |
+| `test_batchensemble_state_dict_persistence` | r/s 벡터 state_dict 저장/복원 bit-exact |
+| `test_numerical_stability_no_nan` | ±500 극단 입력 시 NaN/Inf 전파 방지 |
+| `test_gradient_flows_through_all_params` | backward() 후 전 파라미터 gradient 할당 확인 |
 
 ---
 
@@ -374,21 +364,21 @@ def test_run_entire_test_suite():
 9. 최적 하이퍼파라미터 조합 도출 시 콘솔 자동 리포팅 출력 확인
 10. 튜닝 자동화 전과정 무중단 운영 연속성 검증
 
-### 🧪 Micro Test Code: `tests/test_phase9_hpo_integration.py`
+### 🧪 Micro Test Code: [`tests/test_phase9_hpo_integration.py`](../tests/test_phase9_hpo_integration.py)
 
-```python
-import subprocess
-import os
+**✅ 구현 완료 — 7개 테스트 전체 PASSED (parametrize 포함 9 items)**
 
-def test_optuna_gate_rm_cli():
-    """CLI 환경에서 튜닝 스크립트가 새 아키텍처 인자를 받아 2회 이상 에러 없이 Trial을 완주하는지 최종 스크리닝"""
-    cmd = "python bin/tune.py --model gate_rm --dataset california_housing --n_trials 2"
-    result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
-    
-    assert result.returncode == 0, f"HPO 스크립트 실행 오류: {result.stderr}"
-    assert os.path.exists("output/california_housing/gate_rm"), "HPO 결과 디렉토리가 생성되지 않았습니다."
-
-```
+| 테스트 함수 | 검증 내용 |
+|---|---|
+| `test_optuna_importable_and_study_creation` | Optuna Study 생성 및 방향 설정 |
+| `test_search_space_sampling_valid` | 탐색 공간 파라미터 10회 샘플링 범위 검증 |
+| `test_two_trials_complete_without_error` | GateRMModel 포워드 포함 2회 Trial 완주 |
+| `test_gate_rm_hpo_extreme_configs[8-1-2]` | 최솟값 조합 (d=8, L=1, E=2) |
+| `test_gate_rm_hpo_extreme_configs[32-4-8]` | 최댓값 조합 (d=32, L=4, E=8) |
+| `test_gate_rm_hpo_extreme_configs[16-2-4]` | 중간값 조합 (d=16, L=2, E=4) |
+| `test_optuna_pruning_exception_handled` | TrialPruned 예외 → PRUNED 상태 처리 |
+| `test_optuna_best_trial_accessible` | best_trial 파라미터 접근 |
+| `test_nan_loss_trial_handled` | NaN 목적함수 → FAIL 상태 처리 |
 
 ---
 
@@ -425,39 +415,69 @@ def test_final_artifacts_exist():
 
 ---
 
-## 🚀 구현 완료 및 검증 성과 보고 (Actual Implementation Results)
+## 🚀 구현 완료 및 검증 성과 보고 (RTX 실행 결과 — 2026-07-07)
 
-오리지널 TabR 대비 개량형 모델인 **GateR-M**의 아키텍처 개량과 10개 Phase의 점진적 테스트가 최종 성공적으로 완료되었습니다.
+오리지널 TabR 대비 개량형 모델인 **GateR-M**의 아키텍처 개량과 10개 Phase의 점진적 테스트가 RTX 3090 환경에서 최종 성공적으로 완료되었습니다.
+
+> **실행 환경:** Windows 11 · RTX 3090 24GB · CUDA 13.1 Driver · PyTorch 2.5.1+cu121 · Python 3.10
 
 ### 1. 주요 구현 아티팩트
-1. **[gate_rm.py](file:///Users/cheonhyeonjun/Tabr_new/tabular-dl-tabr/lib/gate_rm.py):**
+1. **[`lib/gate_rm.py`](../lib/gate_rm.py):**
    - `FeatureWiseProjection`: 컬럼 단위 독립 가중치 사영 구현.
    - `GateRRetrieval`: 노이즈 변수 중요도 자동 다운그레이드를 포함한 Cross-Attention 연산 엔진.
    - `StackedGateRRetrieval`: Pre-LayerNorm 및 순환 피드백 기반 Multi-Layer 모듈.
    - `BatchEnsembleLinear`: 저비용 고성능 앙상블을 위한 다중 예측 헤드 구조.
    - `GateRMModel`: 특징 사영, 리트리벌 검색(자가 마스킹 방지벽 적용), 앙상블 프리딕터를 원스톱으로 지원하는 통합 모델 엔드포인트.
-2. **[tabr.py](file:///Users/cheonhyeonjun/Tabr_new/tabular-dl-tabr/bin/tabr.py):**
+2. **[`bin/tabr.py`](../bin/tabr.py):**
    - CPU-GPU 장치 분기에 맞추어 `device.type == 'cpu'`일 때 Segfault가 없는 Pure PyTorch `cdist` L2-search 로직 설계.
    - 학습 주기별 BatchEnsemble 예측 흐름 이식 및 가중치 decay 제외 분기 적용.
-   - PyTorch 2.6+ 보안 경고에 대응한 `weights_only=False` 옵션 통합.
-3. **[tune.py](file:///Users/cheonhyeonjun/Tabr_new/tabular-dl-tabr/bin/tune.py):**
-   - 모델 인자 교체를 통한 HPO 탐색 가능 여부 확인 완료.
+3. **신규 추가 파일:**
+   - [`exp/debug/gate_rm_test.toml`](../exp/debug/gate_rm_test.toml): GateR-M 1-epoch 디버그 config
+   - [`exp/debug/tabr_test.toml`](../exp/debug/tabr_test.toml): test_model_step용 config
+   - [`prepare_data.py`](../prepare_data.py): sklearn California 데이터셋 자동 준비
+   - [`tests/test_phase2_modularization.py`](../tests/test_phase2_modularization.py): 8개 테스트
+   - [`tests/test_phase9_hpo_integration.py`](../tests/test_phase9_hpo_integration.py): 7개 테스트 (9 items)
 
-### 2. PyTest 전체 통과 메트릭
+### 2. PyTest 전체 통과 메트릭 (28/28 PASSED)
 ```text
-tests/test_model_step.py .                                               [  9%]
-tests/test_phase10_final_report.py .                                     [ 18%]
-tests/test_phase1_baseline.py ..                                         [ 36%]
-tests/test_phase3_projection.py .                                        [ 45%]
-tests/test_phase4_attention.py .                                         [ 54%]
-tests/test_phase5_stacked.py .                                           [ 63%]
-tests/test_phase6_batchensemble.py .                                     [ 72%]
-tests/test_phase7_leakage_shield.py .                                    [ 81%]
-tests/test_phase8_regression_suite.py ..                                 [100%]
+tests/test_model_step.py .                                               [  3%]
+tests/test_phase10_final_report.py .                                     [  7%]
+tests/test_phase1_baseline.py ..                                         [ 14%]
+tests/test_phase2_modularization.py ........                             [ 42%]
+tests/test_phase3_projection.py .                                        [ 46%]
+tests/test_phase4_attention.py .                                         [ 50%]
+tests/test_phase5_stacked.py .                                           [ 53%]
+tests/test_phase6_batchensemble.py .                                     [ 57%]
+tests/test_phase7_leakage_shield.py .                                    [ 60%]
+tests/test_phase8_regression_suite.py ..                                 [ 67%]
+tests/test_phase9_hpo_integration.py .........                           [100%]
 
-============================== 11 passed in 1.87s ==============================
+============================== 28 passed in 2.55s ==============================
 ```
 
-### 3. Git 형상 관리
-- 원본 `upstream` 원격 저장소와 구별되는 사용자 고유의 원격지(`origin`, `https://github.com/chjnett/tabular-dl-tabr.git`)에 `feature/gate-rm` 브랜치를 성공적으로 푸시 완료했습니다.
+### 3. GateR-M 1-Epoch 훈련 결과 (RTX 3090)
+```text
+n_parameters = 13221
+GPU: NVIDIA GeForce RTX 3090
+(val) -0.714  (test) -0.715  (loss) 0.68630
+[New best epoch]
+time: 0:00:01
+```
 
+### 4. LaTeX SOTA 비교 표
+```latex
+\begin{table}[h]
+\centering
+\begin{tabular}{lcccc}
+\hline
+Model & Train Score & Val Score & Test Score & Parameters \\
+\hline
+GateR-M (gate_rm) & -0.7084 & -0.7145 & -0.7153 & 13221 \\
+\hline
+\end{tabular}
+\caption{Performance comparison of GateR-M.}
+\end{table}
+```
+
+### 5. Git 형상 관리
+- 원격지(`origin`, `https://github.com/chjnett/tabular-dl-tabr.git`)의 `feature/gate-rm` 브랜치에서 작업 중.
