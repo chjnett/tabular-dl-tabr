@@ -292,6 +292,30 @@ class GateRMModel(nn.Module):
         self.predictor = BatchEnsembleLinear(d_in_predictor, d_out, n_ensembles)
         
         self._reset_label_parameters()
+        
+        # Memory Bank for non-parametric real-time updates
+        self.memory_k: Optional[Tensor] = None
+        self.memory_y_emb: Optional[Tensor] = None
+
+    @torch.no_grad()
+    def init_memory(self, candidate_x_: dict[str, Tensor], candidate_y: Tensor):
+        """Initialize the memory bank for O(1) retrieval during inference."""
+        self.eval()
+        candidate_x = self.embedder(candidate_x_)
+        self.memory_k = candidate_x.flatten(1)  # [M, K*d]
+        self.memory_y_emb = self.label_encoder(candidate_y[..., None])  # [M, d]
+
+    @torch.no_grad()
+    def append_memory(self, new_x_: dict[str, Tensor], new_y: Tensor):
+        """O(1) Real-time update by appending new data to the memory bank."""
+        assert self.memory_k is not None and self.memory_y_emb is not None, "Memory must be initialized first."
+        self.eval()
+        new_candidate_x = self.embedder(new_x_)
+        new_k = new_candidate_x.flatten(1)
+        new_y_emb = self.label_encoder(new_y[..., None])
+        
+        self.memory_k = torch.cat([self.memory_k, new_k], dim=0)
+        self.memory_y_emb = torch.cat([self.memory_y_emb, new_y_emb], dim=0)
 
     def _reset_label_parameters(self):
         if isinstance(self.label_encoder, nn.Linear):
@@ -307,25 +331,35 @@ class GateRMModel(nn.Module):
         *,
         x_: dict[str, Tensor],
         y: Optional[Tensor],
-        candidate_x_: dict[str, Tensor],
-        candidate_y: Tensor,
+        candidate_x_: Optional[dict[str, Tensor]] = None,
+        candidate_y: Optional[Tensor] = None,
         context_size: int,
         is_train: bool,
         ensemble_idx: Optional[Tensor] = None,
     ) -> Tensor:
         x_anchor = self.embedder(x_)
-        candidate_x = self.embedder(candidate_x_)
-        
         batch_size = x_anchor.shape[0]
         device = x_anchor.device
         
         k_anchor = x_anchor.flatten(1)
-        k_candidate = candidate_x.flatten(1)
         
         if is_train:
-            assert y is not None
+            assert candidate_x_ is not None and candidate_y is not None and y is not None
+            candidate_x = self.embedder(candidate_x_)
+            k_candidate = candidate_x.flatten(1)
+            
             k_candidate = torch.cat([k_anchor, k_candidate])
             candidate_y = torch.cat([y, candidate_y])
+            context_y_emb_full = self.label_encoder(candidate_y[..., None])
+        else:
+            if self.memory_k is not None and self.memory_y_emb is not None:
+                k_candidate = self.memory_k
+                context_y_emb_full = self.memory_y_emb
+            else:
+                assert candidate_x_ is not None and candidate_y is not None
+                candidate_x = self.embedder(candidate_x_)
+                k_candidate = candidate_x.flatten(1)
+                context_y_emb_full = self.label_encoder(candidate_y[..., None])
         
         dists = torch.cdist(k_anchor, k_candidate, p=2.0)
         dists_sq = dists.square()
@@ -339,14 +373,12 @@ class GateRMModel(nn.Module):
             ] = torch.inf
             context_idx = context_idx.gather(-1, distances.argsort()[:, :-1])
             
-        all_features = torch.cat([x_anchor, candidate_x], dim=0) if is_train else candidate_x
-        x_neighbors = all_features[context_idx]  # [B, M, K, d]
+        total_candidates = k_candidate.shape[0]
+        k_candidate_3d = k_candidate.view(total_candidates, self.n_features, self.d_embedding)
+        x_neighbors = k_candidate_3d[context_idx]  # [B, M, K, d]
         
-        # >>> Label Retrieval: encode neighbor labels and compute difference transform
-        # context_y: [B, M]
-        context_y = candidate_y[context_idx]  # [B, M]
-        # context_y_emb: [B, M, d_embedding]
-        context_y_emb = self.label_encoder(context_y[..., None])  # regression: [B, M, 1] -> [B, M, d]
+        # >>> Label Retrieval
+        context_y_emb = context_y_emb_full[context_idx]  # [B, M, d]
         
         # Anchor-neighbor difference in flattened key space, projected per-feature
         # k_anchor: [B, K*d], k_candidate[context_idx]: [B, M, K*d]
