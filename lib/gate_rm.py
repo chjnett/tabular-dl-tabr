@@ -303,7 +303,10 @@ class GateRMModel(nn.Module):
         self.eval()
         candidate_x = self.embedder(candidate_x_)
         self.memory_k = candidate_x.flatten(1)  # [M, K*d]
-        self.memory_y_emb = self.label_encoder(candidate_y[..., None])  # [M, d]
+        c_y = candidate_y
+        if isinstance(self.label_encoder, nn.Linear):
+            c_y = c_y[..., None]
+        self.memory_y_emb = self.label_encoder(c_y)  # [M, d]
 
     @torch.no_grad()
     def append_memory(self, new_x_: dict[str, Tensor], new_y: Tensor):
@@ -312,7 +315,11 @@ class GateRMModel(nn.Module):
         self.eval()
         new_candidate_x = self.embedder(new_x_)
         new_k = new_candidate_x.flatten(1)
-        new_y_emb = self.label_encoder(new_y[..., None])
+        
+        c_y = new_y
+        if isinstance(self.label_encoder, nn.Linear):
+            c_y = c_y[..., None]
+        new_y_emb = self.label_encoder(c_y)
         
         self.memory_k = torch.cat([self.memory_k, new_k], dim=0)
         self.memory_y_emb = torch.cat([self.memory_y_emb, new_y_emb], dim=0)
@@ -345,12 +352,14 @@ class GateRMModel(nn.Module):
         
         if is_train:
             assert candidate_x_ is not None and candidate_y is not None and y is not None
-            candidate_x = self.embedder(candidate_x_)
-            k_candidate = candidate_x.flatten(1)
             
-            k_candidate = torch.cat([k_anchor, k_candidate])
-            candidate_y = torch.cat([y, candidate_y])
-            context_y_emb_full = self.label_encoder(candidate_y[..., None])
+            # 1. Memory Efficient Candidate Encoding: Disable autograd for the large candidate pool
+            with torch.no_grad():
+                candidate_x_no_grad = self.embedder(candidate_x_)
+                k_candidate_no_grad = candidate_x_no_grad.flatten(1)
+                
+                k_candidate = torch.cat([k_anchor.detach(), k_candidate_no_grad])
+                candidate_y = torch.cat([y, candidate_y])
         else:
             if self.memory_k is not None and self.memory_y_emb is not None:
                 k_candidate = self.memory_k
@@ -359,26 +368,48 @@ class GateRMModel(nn.Module):
                 assert candidate_x_ is not None and candidate_y is not None
                 candidate_x = self.embedder(candidate_x_)
                 k_candidate = candidate_x.flatten(1)
-                context_y_emb_full = self.label_encoder(candidate_y[..., None])
+                
+                c_y = candidate_y
+                if isinstance(self.label_encoder, nn.Linear):
+                    c_y = c_y[..., None]
+                context_y_emb_full = self.label_encoder(c_y)
         
-        dists = torch.cdist(k_anchor, k_candidate, p=2.0)
+        # 2. Search nearest neighbors
+        dists = torch.cdist(k_anchor.detach() if is_train else k_anchor, k_candidate, p=2.0)
         dists_sq = dists.square()
         
         k_neighbors = context_size + (1 if is_train else 0)
         distances, context_idx = torch.topk(dists_sq, k=k_neighbors, dim=-1, largest=False)
         
         if is_train:
+            # Avoid self-retrieval
             distances[
                 context_idx == torch.arange(batch_size, device=device)[:, None]
             ] = torch.inf
             context_idx = context_idx.gather(-1, distances.argsort()[:, :-1])
             
-        total_candidates = k_candidate.shape[0]
-        k_candidate_3d = k_candidate.view(total_candidates, self.n_features, self.d_embedding)
-        x_neighbors = k_candidate_3d[context_idx]  # [B, M, K, d]
-        
-        # >>> Label Retrieval
-        context_y_emb = context_y_emb_full[context_idx]  # [B, M, d]
+            # 3. Re-encode ONLY the selected neighbors WITH gradients
+            raw_neighbors = {
+                k: torch.cat([x_[k], v], dim=0)[context_idx].flatten(0, 1)
+                for k, v in candidate_x_.items()
+            }
+            x_neighbors_flat = self.embedder(raw_neighbors)  # [B*M, K, d]
+            x_neighbors = x_neighbors_flat.view(batch_size, context_size, self.n_features, self.d_embedding)
+            
+            context_y = candidate_y[context_idx]  # [B, M]
+            if isinstance(self.label_encoder, nn.Linear):
+                context_y = context_y[..., None]
+            context_y_emb = self.label_encoder(context_y)  # [B, M, d]
+            
+            context_k = x_neighbors.flatten(2)  # [B, M, K*d]
+            
+        else:
+            total_candidates = k_candidate.shape[0]
+            k_candidate_3d = k_candidate.view(total_candidates, self.n_features, self.d_embedding)
+            x_neighbors = k_candidate_3d[context_idx]  # [B, M, K, d]
+            
+            context_y_emb = context_y_emb_full[context_idx]  # [B, M, d]
+            context_k = k_candidate[context_idx]  # [B, M, K*d]
         
         # Anchor-neighbor difference in flattened key space, projected per-feature
         # k_anchor: [B, K*d], k_candidate[context_idx]: [B, M, K*d]
