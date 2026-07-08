@@ -64,16 +64,21 @@ class GateRRetrieval(nn.Module):
         self.projection = FeatureWiseProjection(d_embedding, n_features, share_weights)
         self.dropout = nn.Dropout(context_dropout)
         self.d_embedding = d_embedding
+        # Option B: Concat fusion layer - projects [x_neighbors || label_emb] from 2d -> d
+        self.label_fusion = nn.Linear(d_embedding * 2, d_embedding)
 
     def forward(self, x_anchor: Tensor, x_neighbors: Tensor, label_emb: Optional[Tensor] = None, return_attn: bool = False) -> Union[Tensor, tuple[Tensor, Tensor]]:
         # x_anchor: [B, K, d]
         # x_neighbors: [B, M, K, d] (M = context_size)
         # label_emb: [B, M, K, d] (optional, neighbor label embeddings)
-        Q, K, V = self.projection(x_anchor, x_neighbors)
         
-        # If label embeddings are provided, add them to values (TabR-style)
+        # Option B (Concat): fuse neighbor features with label embeddings before projection
         if label_emb is not None:
-            V = V + label_emb
+            # Concat along embedding dim: [B, M, K, 2d] -> project to [B, M, K, d]
+            fused = torch.cat([x_neighbors, label_emb], dim=-1)
+            x_neighbors = self.label_fusion(fused)
+        
+        Q, K, V = self.projection(x_anchor, x_neighbors)
         
         # Feature-wise matching score using inner product:
         # Q: [B, K, d], K: [B, M, K, d] -> scores: [B, M, K]
