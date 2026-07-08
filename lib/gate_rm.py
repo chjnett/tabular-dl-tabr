@@ -65,10 +65,15 @@ class GateRRetrieval(nn.Module):
         self.dropout = nn.Dropout(context_dropout)
         self.d_embedding = d_embedding
 
-    def forward(self, x_anchor: Tensor, x_neighbors: Tensor, return_attn: bool = False) -> Union[Tensor, tuple[Tensor, Tensor]]:
+    def forward(self, x_anchor: Tensor, x_neighbors: Tensor, label_emb: Optional[Tensor] = None, return_attn: bool = False) -> Union[Tensor, tuple[Tensor, Tensor]]:
         # x_anchor: [B, K, d]
         # x_neighbors: [B, M, K, d] (M = context_size)
+        # label_emb: [B, M, K, d] (optional, neighbor label embeddings)
         Q, K, V = self.projection(x_anchor, x_neighbors)
+        
+        # If label embeddings are provided, add them to values (TabR-style)
+        if label_emb is not None:
+            V = V + label_emb
         
         # Feature-wise matching score using inner product:
         # Q: [B, K, d], K: [B, M, K, d] -> scores: [B, M, K]
@@ -102,14 +107,14 @@ class StackedGateRRetrieval(nn.Module):
             for _ in range(n_layers)
         ])
 
-    def forward(self, x_anchor: Tensor, x_neighbors: Tensor, return_trajectories: bool = False) -> Union[Tensor, tuple[Tensor, list[Tensor]]]:
+    def forward(self, x_anchor: Tensor, x_neighbors: Tensor, label_emb: Optional[Tensor] = None, return_trajectories: bool = False) -> Union[Tensor, tuple[Tensor, list[Tensor]]]:
         h = x_anchor
         trajectories = [h]
         
         for norm, layer in zip(self.norms, self.layers):
             # Pre-LayerNorm residual connection
             h_norm = norm(h)
-            h = layer(h_norm, x_neighbors)
+            h = layer(h_norm, x_neighbors, label_emb=label_emb)
             trajectories.append(h)
             
         if return_trajectories:
@@ -258,9 +263,39 @@ class GateRMModel(nn.Module):
             share_weights=share_weights,
         )
         
+        # >>> Label Retrieval (TabR core mechanism)
+        # Label encoder: maps neighbor labels to d_embedding space
+        self.label_encoder = (
+            nn.Linear(1, d_embedding)
+            if n_classes is None  # regression
+            else nn.Sequential(
+                nn.Embedding(n_classes, d_embedding),
+                delu.nn.Lambda(lambda x: x.squeeze(-2)),
+            )
+        )
+        # Label transform: processes (anchor - neighbor) difference
+        d_block = d_embedding * 2
+        self.label_transform = nn.Sequential(
+            nn.Linear(d_embedding, d_block),
+            nn.ReLU(),
+            nn.Dropout(context_dropout),
+            nn.Linear(d_block, d_embedding, bias=False),
+        )
+        
         d_in_predictor = self.n_features * d_embedding
         d_out = lib.get_d_out(n_classes)
         self.predictor = BatchEnsembleLinear(d_in_predictor, d_out, n_ensembles)
+        
+        self._reset_label_parameters()
+
+    def _reset_label_parameters(self):
+        if isinstance(self.label_encoder, nn.Linear):
+            bound = 1 / math.sqrt(2.0)
+            nn.init.uniform_(self.label_encoder.weight, -bound, bound)
+            nn.init.uniform_(self.label_encoder.bias, -bound, bound)
+        else:
+            assert isinstance(self.label_encoder[0], nn.Embedding)
+            nn.init.uniform_(self.label_encoder[0].weight, -1.0, 1.0)
 
     def forward(
         self,
@@ -285,6 +320,7 @@ class GateRMModel(nn.Module):
         if is_train:
             assert y is not None
             k_candidate = torch.cat([k_anchor, k_candidate])
+            candidate_y = torch.cat([y, candidate_y])
         
         dists = torch.cdist(k_anchor, k_candidate, p=2.0)
         dists_sq = dists.square()
@@ -299,9 +335,27 @@ class GateRMModel(nn.Module):
             context_idx = context_idx.gather(-1, distances.argsort()[:, :-1])
             
         all_features = torch.cat([x_anchor, candidate_x], dim=0) if is_train else candidate_x
-        x_neighbors = all_features[context_idx]
+        x_neighbors = all_features[context_idx]  # [B, M, K, d]
         
-        h = self.retrieval(x_anchor, x_neighbors)
+        # >>> Label Retrieval: encode neighbor labels and compute difference transform
+        # context_y: [B, M]
+        context_y = candidate_y[context_idx]  # [B, M]
+        # context_y_emb: [B, M, d_embedding]
+        context_y_emb = self.label_encoder(context_y[..., None])  # regression: [B, M, 1] -> [B, M, d]
+        
+        # Anchor-neighbor difference in flattened key space, projected per-feature
+        # k_anchor: [B, K*d], k_candidate[context_idx]: [B, M, K*d]
+        context_k = k_candidate[context_idx]  # [B, M, K*d]
+        diff = k_anchor[:, None, :] - context_k  # [B, M, K*d]
+        # Reshape to per-feature: [B, M, K, d]
+        diff = diff.reshape(batch_size, context_size, self.n_features, self.d_embedding)
+        # Transform the difference: [B, M, K, d]
+        diff_transformed = self.label_transform(diff)
+        # Combine label embedding (broadcast over features) + difference
+        # context_y_emb: [B, M, d] -> [B, M, 1, d] (broadcast over K features)
+        label_emb = context_y_emb.unsqueeze(2) + diff_transformed  # [B, M, K, d]
+        
+        h = self.retrieval(x_anchor, x_neighbors, label_emb=label_emb)
         h_flat = h.flatten(1)
         
         out = self.predictor(h_flat, ensemble_idx)

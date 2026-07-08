@@ -244,7 +244,7 @@ def summarize(report: JSONDict) -> JSONDict:
             summary[key] = deepcopy(report[key])
 
     metrics = report.get('metrics')
-    if metrics is not None and 'score' in next(iter(metrics.values())):
+    if metrics and 'score' in next(iter(metrics.values())):
         summary['scores'] = {part: metrics[part]['score'] for part in metrics}
 
     for key in ['n_completed_trials', 'time']:
@@ -424,7 +424,11 @@ def load_predictions(output: Union[str, Path]) -> dict[str, np.ndarray]:
 def dump_predictions(
     predictions: dict[str, np.ndarray], output: Union[str, Path]
 ) -> None:
-    np.savez(env.get_path(output) / 'predictions.npz', **predictions)
+    try:
+        np.savez(env.get_path(output) / 'predictions.npz', **predictions)
+    except OSError as e:
+        from loguru import logger
+        logger.error(f"Failed to dump predictions: {e}. Shapes: { {k: v.shape for k, v in predictions.items()} }. Skipping save to avoid crash.")
 
 
 def get_checkpoint_path(output: Union[str, Path]) -> Path:

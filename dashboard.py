@@ -8,7 +8,7 @@ import re
 import time
 
 PORT = 8080
-LOG_FILE = r"C:\Users\uns\.gemini\antigravity\brain\6190524e-ffcf-4a6a-97ee-e140bc1498cf\.system_generated\tasks\task-395.log"
+LOG_FILE = r"C:\chun\LLM\Tabr\tabular-dl-tabr\exp\tabr\california\tuning.log"
 REPORT_FILE = r"C:\chun\LLM\Tabr\tabular-dl-tabr\exp\tabr\california\gate_rm-tuning\report.json"
 TOTAL_TRIALS = 30
 
@@ -72,14 +72,15 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
                         # Parse granular progress
                         data["current_trial_status"] = "Preparing next trial..."
                         for line in reversed(lines[-50:]):
+                            line = line.replace('%', '█').replace('', '█').replace('[A', '')
                             if "Epoch" in line and "%|" in line:
-                                m = re.search(r'(Epoch\s+\d+):\s+(\d+)%\|.*?\|\s+(\d+/\d+)\s+\[(.*?)\]', line)
+                                m = re.search(r'(Epoch\s+\d+):\s*(\d+)%\|.*?\|\s*(\d+/\d+)\s*\[(.*?)\]', line)
                                 if m:
                                     time_info = m.group(4).replace('<', ' 남은시간: ')
                                     data["current_trial_status"] = f"{m.group(1)} &mdash; {m.group(2)}% ({m.group(3)} iters) <span class='ml-3 text-amber-400 font-mono text-[11px]'>⏱️ {time_info}</span>"
                                     break
                                 else:
-                                    m2 = re.search(r'(Epoch\s+\d+):\s+(\d+)%\|.*?\|\s+(\d+/\d+)', line)
+                                    m2 = re.search(r'(Epoch\s+\d+):\s*(\d+)%\|.*?\|\s*(\d+/\d+)', line)
                                     if m2:
                                         data["current_trial_status"] = f"{m2.group(1)} &mdash; {m2.group(2)}% ({m2.group(3)} iters)"
                                         break
