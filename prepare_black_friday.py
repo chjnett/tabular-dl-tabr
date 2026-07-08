@@ -20,7 +20,9 @@ def main():
     print(f"Dataset loaded! Shape: {X.shape}")
     
     # 2. Handle missing values
-    # Product_Category_2 and Product_Category_3 have NaNs. We fill with a string placeholder.
+    # OpenML returns Categorical dtypes. We convert to string to avoid category errors.
+    X = X.astype(str)
+    X = X.replace(["nan", "NaN", "<NA>"], "Unknown")
     X = X.fillna("Unknown")
     
     # Convert target to float32 (Regression)
