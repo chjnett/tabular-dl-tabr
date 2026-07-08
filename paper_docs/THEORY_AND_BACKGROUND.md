@@ -6,7 +6,11 @@
 ### 1.1 The Scalar Weight Contamination Problem (스칼라 오염 현상)
 TabR은 앵커(Target) 샘플과 이웃(Neighbor) 샘플 간의 거리를 유클리디안(L2) 거리 기반으로 계산하고, 이를 기반으로 **스칼라 어텐션 가중치(Scalar Attention Weight)** $w \in \mathbb{R}$를 산출합니다.
 수식적으로 TabR의 검색값 결합 방식은 다음과 같습니다:
-$$x_{out} = x_{anchor} + \sum_{m=1}^{M} w_m \cdot V_m$$
+
+$$
+x_{out} = x_{anchor} + \sum_{m=1}^{M} w_m \cdot V_m
+$$
+
 여기서 $w_m$은 단일 스칼라 값이므로, 모델은 이웃의 유의미한 피처(예: 집값 예측의 '면적')와 무의미한 노이즈 피처(예: '우편번호')에 **동일한 가중치**를 곱하게 됩니다. 이로 인해 노이즈 칼럼이 예측 과정에 그대로 혼입(Contamination)되어 일반화(Generalization) 성능을 훼손합니다.
 
 ### 1.2 Static Key and Shallow Retrieval (정적 키 고착)
@@ -22,17 +26,30 @@ TabR은 네트워크 초입에서 입력 특성만을 기반으로 한 번 검�
 기존 TabR은 이웃의 특성 정보와 라벨 정보를 단순히 덧셈(Addition) 연산으로 융합했습니다($V = x_{neighbors} + y_{neighbors\_emb}$). 그러나 특성과 정답 라벨은 의미적 도메인이 다르므로, 덧셈 연산은 상호 간섭(Interference)을 유발할 수 있습니다. 
 GateR-M은 **특성과 라벨을 결합(Concatenate)**하여 넓은 피처 공간을 확보한 뒤, 학습 가능한 가중치 행렬 $W_{fusion}$을 통해 두 도메인의 상호작용을 비선형적으로 조절합니다.
 
-$$ \text{Fused}_{m} = [ x_{neighbors, m} \parallel y_{neighbors\_emb, m} ] \in \mathbb{R}^{K \times 2d} $$
-$$ V_m, K_m = \text{LayerNorm}(W_{fusion} \cdot \text{Fused}_m) \in \mathbb{R}^{K \times d} $$
+$$
+\text{Fused}_{m} = [ x_{neighbors, m} \parallel y_{neighbors\_emb, m} ] \in \mathbb{R}^{K \times 2d}
+$$
+$$
+V_m, K_m = \text{LayerNorm}(W_{fusion} \cdot \text{Fused}_m) \in \mathbb{R}^{K \times d}
+$$
 
 이 방식을 통해 모델은 라벨 정보가 특성 정보의 어느 채널에 어떻게 개입할지(Expressive Power) 스스로 학습하게 됩니다.
 
 ### 2.2 Feature-Wise Cross-Attention
 스칼라 오염 현상을 해결하기 위해, GateR-M은 $Q, K, V$ 행렬 연산을 통해 **피처 차원($K$)에 독립적인 어텐션 맵(3D Attention Map)**을 생성합니다.
-$$ Q = W_Q \cdot x_{anchor} \in \mathbb{R}^{K \times d} $$
-$$ \text{Scores} = \frac{Q \cdot K^\top}{\sqrt{d}} \in \mathbb{R}^{M \times K} $$
-$$ \text{Attention} = \text{Softmax}(\text{Scores}, \text{dim=M}) $$
-$$ Z = \sum_{m=1}^{M} \text{Attention}_m \odot V_m \in \mathbb{R}^{K \times d} $$
+
+$$
+Q = W_Q \cdot x_{anchor} \in \mathbb{R}^{K \times d}
+$$
+$$
+\text{Scores} = \frac{Q \cdot K^\top}{\sqrt{d}} \in \mathbb{R}^{M \times K}
+$$
+$$
+\text{Attention} = \text{Softmax}(\text{Scores}, \text{dim}=M)
+$$
+$$
+Z = \sum_{m=1}^{M} \text{Attention}_m \odot V_m \in \mathbb{R}^{K \times d}
+$$
 
 결과적으로 특정 피처 채널에 노이즈가 강할 경우, 해당 피처에 대한 Attention 점수만 낮아지게 되어(Masking/Cut-off) 유의미한 정보만 정제되어 수집($Z$)됩니다.
 
