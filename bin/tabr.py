@@ -469,6 +469,12 @@ def main(
     @torch.inference_mode()
     def evaluate(parts: list[str], eval_batch_size: int):
         model.eval()
+        
+        # O(1) Non-parametric Memory Optimization for GateR-M
+        if model_type == 'gate_rm':
+            candidate_x, candidate_y = get_Xy('train', None)
+            model.init_memory(candidate_x, candidate_y)
+            
         predictions = {}
         for part in parts:
             while eval_batch_size:
