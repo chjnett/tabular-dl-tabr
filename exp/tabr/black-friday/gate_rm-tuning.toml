@@ -1,7 +1,7 @@
 seed = 0
 function = "bin.tabr.main"
 n_trials = 30
-timeout = "__null__"
+timeout = 36000 # 10 hours
 
 [sampler]
 
@@ -9,26 +9,28 @@ timeout = "__null__"
 seed = 0
 batch_size = 256
 patience = 16
-n_epochs = inf
+n_epochs = 1000
 context_size = 96
 
 [space.data]
 seed = 0
 cache = true
-path = ":data/black-friday"
+path = "data/black-friday"
 num_policy = "quantile"
-cat_policy = "__null__"
+cat_policy = "ordinal"
 y_policy = "standard"
 
 [space.model]
-type = "gate_rm"
-num_embeddings = "__null__"
-d_embedding = ["_tune_", "int", 96, 384]
-n_layers = ["_tune_", "int", 1, 4]
-n_ensembles = ["_tune_", "int", 4, 8]
-context_dropout = ["_tune_", "uniform", 0.0, 0.6]
+model_type = "gate_rm"
+d_embedding = ["_tune_", "int", 96, 512]
+d_out = ["_tune_", "int", 64, 256]
+n_layers = ["_tune_", "int", 1, 6]
+n_ensembles = ["_tune_", "int", 1, 10]
+context_dropout = ["_tune_", "uniform", 0.0, 0.5]
+d_proj = 64
+n_features = 9
 
 [space.optimizer]
 type = "AdamW"
-lr = ["_tune_", "loguniform", 3e-05, 0.001]
-weight_decay = ["_tune_", "?loguniform", 0.0, 1e-06, 0.001]
+lr = ["_tune_", "loguniform", 1e-4, 1e-2]
+weight_decay = ["_tune_", "loguniform", 1e-6, 1e-3]
