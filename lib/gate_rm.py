@@ -392,7 +392,7 @@ class GateRMModel(nn.Module):
             
             # 1. Memory Efficient Candidate Encoding: Disable autograd for the large candidate pool
             with torch.no_grad():
-                candidate_x_no_grad = self.embedder(candidate_x_)
+                candidate_x_no_grad = self.ema_embedder(candidate_x_)
                 k_candidate_no_grad = candidate_x_no_grad.flatten(1)
                 
                 k_candidate = torch.cat([k_anchor.detach(), k_candidate_no_grad])
@@ -425,12 +425,13 @@ class GateRMModel(nn.Module):
             ] = torch.inf
             context_idx = context_idx.gather(-1, distances.argsort()[:, :-1])
             
-            # 3. Re-encode ONLY the selected neighbors WITH gradients
-            raw_neighbors = {
-                k: torch.cat([x_[k], v], dim=0)[context_idx].flatten(0, 1)
-                for k, v in candidate_x_.items()
-            }
-            x_neighbors_flat = self.embedder(raw_neighbors)  # [B*M, K, d]
+            # 3. Use EMA embedder for selected neighbors WITHOUT gradients
+            with torch.no_grad():
+                raw_neighbors = {
+                    k: torch.cat([x_[k], v], dim=0)[context_idx].flatten(0, 1)
+                    for k, v in candidate_x_.items()
+                }
+                x_neighbors_flat = self.ema_embedder(raw_neighbors)  # [B*M, K, d]
             x_neighbors = x_neighbors_flat.view(batch_size, context_size, self.n_features, self.d_embedding)
             
             context_y = candidate_y[context_idx]  # [B, M]
