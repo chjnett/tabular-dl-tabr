@@ -319,6 +319,44 @@ class Model(nn.Module):
         return x
 
 
+class CUDAPrefetcher:
+    """Asynchronous data prefetcher for streaming data from CPU to GPU."""
+    def __init__(self, loader, device):
+        self.loader = iter(loader)
+        self.device = device
+        self.stream = torch.cuda.Stream()
+        self.preload()
+
+    def preload(self):
+        try:
+            self.next_batch = next(self.loader)
+        except StopIteration:
+            self.next_batch = None
+            return
+        with torch.cuda.stream(self.stream):
+            if isinstance(self.next_batch, torch.Tensor):
+                self.next_batch = self.next_batch.to(self.device, non_blocking=True)
+            elif isinstance(self.next_batch, dict):
+                self.next_batch = {k: v.to(self.device, non_blocking=True) for k, v in self.next_batch.items()}
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        torch.cuda.current_stream().wait_stream(self.stream)
+        batch = self.next_batch
+        if batch is None:
+            raise StopIteration
+        if isinstance(batch, torch.Tensor):
+            batch.record_stream(torch.cuda.current_stream())
+        elif isinstance(batch, dict):
+            for t in batch.values():
+                if isinstance(t, torch.Tensor):
+                    t.record_stream(torch.cuda.current_stream())
+        self.preload()
+        return batch
+
+
 def main(
     config: lib.JSONDict, output: Union[str, Path], *, force: bool = False
 ) -> Optional[lib.JSONDict]:
@@ -531,8 +569,11 @@ def main(
 
         model.train()
         epoch_losses = []
+        batch_loader = lib.make_random_batches(train_size, C.batch_size, device)
+        prefetcher = CUDAPrefetcher(batch_loader, device)
+        
         for batch_idx in tqdm(
-            lib.make_random_batches(train_size, C.batch_size, device),
+            prefetcher,
             desc=f'Epoch {epoch}',
         ):
             loss, new_chunk_size = lib.train_step(
@@ -541,6 +582,12 @@ def main(
                 batch_idx,
                 chunk_size or C.batch_size,
             )
+            if model_type == 'gate_rm':
+                if isinstance(model, nn.DataParallel):
+                    if hasattr(model.module, 'update_ema'): model.module.update_ema()
+                else:
+                    if hasattr(model, 'update_ema'): model.update_ema()
+                    
             epoch_losses.append(loss.detach())
             if new_chunk_size and new_chunk_size < (chunk_size or C.batch_size):
                 chunk_size = new_chunk_size
