@@ -99,12 +99,30 @@ class GateRRetrieval(nn.Module):
             return out, attn
         return out
 
+class FeatureCompression(nn.Module):
+    def __init__(self, n_features: int, compression_dim: int):
+        super().__init__()
+        self.W_compress = nn.Parameter(torch.empty(n_features, compression_dim))
+        nn.init.orthogonal_(self.W_compress)
+        
+    def forward(self, x: Tensor) -> Tensor:
+        # x: [B, ..., K, d] -> [B, ..., C, d]
+        if x.ndim == 3:
+            return torch.einsum('bkd,kc->bcd', x, self.W_compress)
+        elif x.ndim == 4:
+            return torch.einsum('bmkd,kc->bmcd', x, self.W_compress)
+        else:
+            raise ValueError(f"Unsupported ndim for FeatureCompression: {x.ndim}")
+
 class StackedGateRRetrieval(nn.Module):
-    def __init__(self, d_embedding: int, n_features: int, context_dropout: float, n_layers: int = 3, share_weights: bool = False):
+    def __init__(self, d_embedding: int, n_features: int, context_dropout: float, n_layers: int = 3, share_weights: bool = False, compression_dim: Optional[int] = None):
         super().__init__()
         self.n_layers = n_layers
+        self.compression = FeatureCompression(n_features, compression_dim) if compression_dim is not None else None
+        
+        effective_features = compression_dim if compression_dim is not None else n_features
         self.layers = nn.ModuleList([
-            GateRRetrieval(d_embedding, n_features, context_dropout, share_weights)
+            GateRRetrieval(d_embedding, effective_features, context_dropout, share_weights)
             for _ in range(n_layers)
         ])
         self.norms = nn.ModuleList([
@@ -113,6 +131,12 @@ class StackedGateRRetrieval(nn.Module):
         ])
 
     def forward(self, x_anchor: Tensor, x_neighbors: Tensor, label_emb: Optional[Tensor] = None, return_trajectories: bool = False) -> Union[Tensor, tuple[Tensor, list[Tensor]]]:
+        if self.compression is not None:
+            x_anchor = self.compression(x_anchor)
+            x_neighbors = self.compression(x_neighbors)
+            if label_emb is not None:
+                label_emb = self.compression(label_emb)
+                
         h = x_anchor
         trajectories = [h]
         
