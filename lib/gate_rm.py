@@ -269,6 +269,7 @@ class GateRMModel(nn.Module):
         context_dropout: float = 0.2,
         share_weights: bool = False,
         num_embeddings: Optional[dict] = None,
+        compression_dim: Optional[int] = None,
     ):
         super().__init__()
         self.n_features = n_num_features + n_bin_features + len(cat_cardinalities)
@@ -284,12 +285,18 @@ class GateRMModel(nn.Module):
             num_embeddings=num_embeddings,
         )
         
+        import copy
+        self.ema_embedder = copy.deepcopy(self.embedder)
+        for param in self.ema_embedder.parameters():
+            param.requires_grad = False
+        
         self.retrieval = StackedGateRRetrieval(
             d_embedding=d_embedding,
             n_features=self.n_features,
             context_dropout=context_dropout,
             n_layers=n_layers,
             share_weights=share_weights,
+            compression_dim=compression_dim,
         )
         
         # >>> Label Retrieval (TabR core mechanism)
@@ -320,6 +327,12 @@ class GateRMModel(nn.Module):
         # Memory Bank for non-parametric real-time updates
         self.memory_k: Optional[Tensor] = None
         self.memory_y_emb: Optional[Tensor] = None
+
+    @torch.no_grad()
+    def update_ema(self, momentum: float = 0.999):
+        """Update EMA encoder weights from the main embedder."""
+        for param, ema_param in zip(self.embedder.parameters(), self.ema_embedder.parameters()):
+            ema_param.data.mul_(momentum).add_(param.data, alpha=1.0 - momentum)
 
     @torch.no_grad()
     def init_memory(self, candidate_x_: dict[str, Tensor], candidate_y: Tensor):
