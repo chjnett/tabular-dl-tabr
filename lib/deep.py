@@ -159,8 +159,9 @@ class NLinear(nn.Module):
 
     def forward(self, x):
         assert x.ndim == 3
-        x = x[..., None] * self.weight[None]
-        x = x.sum(-2)
+        # OOM FIX: Replaced memory-exploding broadcasting with torch.einsum
+        # Original: x = (x[..., None] * self.weight[None]).sum(-2)
+        x = torch.einsum('bfi,fio->bfo', x, self.weight)
         if self.bias is not None:
             x = x + self.bias[None]
         return x
