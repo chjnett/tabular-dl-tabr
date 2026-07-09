@@ -45,17 +45,41 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             
             # Calculate overall ETA
             if os.path.exists(LOG_FILE):
-                start_time = os.path.getctime(LOG_FILE)
-                elapsed = time.time() - start_time
-                if data["completed_trials"] > 0:
-                    # Estimate based on completed trials
-                    avg_time = elapsed / data["completed_trials"]
-                    rem_trials = TOTAL_TRIALS - data["completed_trials"]
-                    eta_sec = rem_trials * avg_time
-                    h = int(eta_sec // 3600)
-                    m = int((eta_sec % 3600) // 60)
-                    data["overall_eta"] = f"{h}h {m}m"
-                else:
+                try:
+                    with open(LOG_FILE, "r", encoding="utf-8", errors="replace") as f:
+                        lines = f.readlines()
+                    
+                    # Parse start time from log
+                    start_time = time.time()
+                    for line in lines:
+                        if "[>>>]" in line and "|" in line:
+                            time_str = line.split("|")[-1].strip()
+                            try:
+                                import datetime
+                                dt = datetime.datetime.strptime(time_str, "%Y-%m-%d %H:%M:%S.%f")
+                                start_time = dt.timestamp()
+                                break
+                            except:
+                                pass
+                                
+                    elapsed = time.time() - start_time
+                    # Only calculate if we have a reasonable elapsed time (e.g. running for more than a minute)
+                    if data["completed_trials"] > 0 and elapsed > 60:
+                        # Estimate based on completed trials
+                        avg_time = elapsed / data["completed_trials"]
+                        rem_trials = TOTAL_TRIALS - data["completed_trials"]
+                        eta_sec = rem_trials * avg_time
+                        h = int(eta_sec // 3600)
+                        m = int((eta_sec % 3600) // 60)
+                        data["overall_eta"] = f"{h}h {m}m"
+                    else:
+                        # Fallback heuristic: 8 minutes per trial
+                        rem_trials = TOTAL_TRIALS - data["completed_trials"]
+                        eta_sec = rem_trials * 8 * 60
+                        h = int(eta_sec // 3600)
+                        m = int((eta_sec % 3600) // 60)
+                        data["overall_eta"] = f"{h}h {m}m (Estimated)"
+                except Exception:
                     data["overall_eta"] = "계산 중..."
             else:
                 data["overall_eta"] = "N/A"
