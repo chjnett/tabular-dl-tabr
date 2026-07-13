@@ -91,49 +91,51 @@
             "model": {
                 "type": "gate_rm",
                 "num_embeddings": null,
-                "d_embedding": 353,
+                "d_embedding": 328,
                 "n_layers": 4,
-                "n_ensembles": 5,
-                "context_dropout": 0.47503502284959875
+                "n_ensembles": 4,
+                "context_dropout": 0.43265736446521313
             },
             "optimizer": {
                 "type": "AdamW",
-                "lr": 0.00019167438854414756,
-                "weight_decay": 1.6334587611069488e-06
+                "lr": 3.437509196278191e-05,
+                "weight_decay": 0.0
             }
         },
-        "n_parameters": 13489548,
+        "n_parameters": 11645973,
         "prediction_type": null,
-        "best_epoch": 59,
+        "best_epoch": 85,
         "metrics": {
             "train": {
-                "rmse": 0.4641257677982566,
-                "mae": 0.31134359002127354,
-                "r2": 0.838063657283783,
-                "score": -0.4641257677982566
+                "rmse": 0.45780043641304724,
+                "mae": 0.30529299859581727,
+                "r2": 0.8424474596977234,
+                "score": -0.45780043641304724
             },
             "val": {
-                "rmse": 0.4954107527105861,
-                "mae": 0.3258512053673783,
-                "r2": 0.8132854700088501,
-                "score": -0.4954107527105861
+                "rmse": 0.4947818975221321,
+                "mae": 0.3241056910841209,
+                "r2": 0.8137592077255249,
+                "score": -0.4947818975221321
             },
             "test": {
-                "rmse": 0.48558435451046145,
-                "mae": 0.3159269141431693,
-                "r2": 0.8255782723426819,
-                "score": -0.48558435451046145
+                "rmse": 0.483977598684195,
+                "mae": 0.31191005206270717,
+                "r2": 0.8267306685447693,
+                "score": -0.483977598684195
             }
         },
-        "time": "2:38:19",
+        "time": "16:56:20",
         "chunk_size": null,
         "eval_batch_size": 2048,
-        "trial_id": 1,
-        "tuning_time": "5:49:58"
+        "trial_id": 11,
+        "tuning_time": "1 day, 13:31:40"
     },
-    "time": "8:54:36",
-    "n_completed_trials": 5,
+    "time": "3 days, 15:55:39",
+    "n_completed_trials": 18,
     "continuations": [
-        1
+        1,
+        5,
+        17
     ]
 }
