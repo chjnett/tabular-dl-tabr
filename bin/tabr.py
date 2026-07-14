@@ -251,26 +251,12 @@ class Model(nn.Module):
         batch_size, d_main = k.shape
         device = k.device
         with torch.no_grad():
-            if device.type == 'cpu':
-                # Pure PyTorch fallback on CPU to prevent faiss segfault on macOS CPU
-                dists = torch.cdist(k, candidate_k, p=2.0)
-                dists_sq = dists.square()
-                distances, context_idx = torch.topk(
-                    dists_sq, k=context_size + (1 if is_train else 0), dim=-1, largest=False
-                )
-            else:
-                if self.search_index is None:
-                    self.search_index = (
-                        faiss.GpuIndexFlatL2(faiss.StandardGpuResources(), d_main)
-                        if device.type == 'cuda'
-                        else faiss.IndexFlatL2(d_main)
-                    )
-                # Updating the index is much faster than creating a new one.
-                self.search_index.reset()
-                self.search_index.add(candidate_k)  # type: ignore[code]
-                distances, context_idx = self.search_index.search(  # type: ignore[code]
-                    k, context_size + (1 if is_train else 0)
-                )
+            # Force Pure PyTorch fallback on GPU/CPU to prevent faiss crashes on Windows
+            dists = torch.cdist(k, candidate_k, p=2.0)
+            dists_sq = dists.square()
+            distances, context_idx = torch.topk(
+                dists_sq, k=context_size + (1 if is_train else 0), dim=-1, largest=False
+            )
             if is_train:
                 # NOTE: to avoid leakage, the index i must be removed from the i-th row,
                 # (because of how candidate_k is constructed).

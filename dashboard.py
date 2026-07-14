@@ -8,8 +8,8 @@ import re
 import time
 
 PORT = 8080
-LOG_FILE = r"C:\chun\LLM\Tabr\tabular-dl-tabr\exp\tabr\california\tuning.log"
-REPORT_FILE = r"C:\chun\LLM\Tabr\tabular-dl-tabr\exp\tabr\california\gate_rm-tuning\report.json"
+LOG_FILE = r"C:\chun\LLM\Tabr\tabular-dl-tabr\exp\tabr\california\gaterm_fair_tuning.log"
+REPORT_FILE = r"C:\chun\LLM\Tabr\tabular-dl-tabr\exp\tabr\california\gate_rm-fair-tuning\report.json"
 TOTAL_TRIALS = 30
 
 class DashboardHandler(http.server.SimpleHTTPRequestHandler):

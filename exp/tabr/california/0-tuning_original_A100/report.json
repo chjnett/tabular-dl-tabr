@@ -1,12 +1,12 @@
 {
     "function": "bin.tune.main",
     "gpus": [
-        "NVIDIA GeForce RTX 3090"
+        "A100-SXM-80GB"
     ],
     "config": {
         "seed": 0,
         "function": "bin.tabr.main",
-        "n_trials": 30,
+        "n_trials": 100,
         "timeout": null,
         "sampler": {},
         "space": {
@@ -64,7 +64,7 @@
                     "?loguniform",
                     0.0,
                     1e-06,
-                    0.001
+                    0.0001
                 ]
             }
         }
@@ -72,7 +72,7 @@
     "best": {
         "function": "bin.tabr.main",
         "gpus": [
-            "NVIDIA GeForce RTX 3090"
+            "A100-SXM-80GB"
         ],
         "config": {
             "seed": 0,
@@ -90,52 +90,52 @@
             },
             "model": {
                 "num_embeddings": null,
-                "d_main": 346,
-                "context_dropout": 0.4268958793333497,
+                "d_main": 303,
+                "context_dropout": 0.23258422826138023,
                 "d_multiplier": 2.0,
                 "encoder_n_blocks": 0,
                 "predictor_n_blocks": 1,
                 "mixer_normalization": "auto",
-                "dropout0": 0.5318011312033046,
+                "dropout0": 0.5508268685197037,
                 "dropout1": 0.0,
                 "normalization": "LayerNorm",
                 "activation": "ReLU"
             },
             "optimizer": {
                 "type": "AdamW",
-                "lr": 0.0006053907324479423,
-                "weight_decay": 7.603128562498431e-05
+                "lr": 0.000280842117039655,
+                "weight_decay": 0.0
             }
         },
-        "n_parameters": 1085057,
+        "n_parameters": 832948,
         "prediction_type": null,
-        "best_epoch": 41,
+        "best_epoch": 48,
         "metrics": {
             "train": {
-                "rmse": 0.38154561493995526,
-                "mae": 0.24297940703603516,
-                "r2": 0.8905625343322754,
-                "score": -0.38154561493995526
+                "rmse": 0.3667418054987745,
+                "mae": 0.2351648573076588,
+                "r2": 0.9001465795526685,
+                "score": -0.3667418054987745
             },
             "val": {
-                "rmse": 0.4167355080825769,
-                "mae": 0.2597620652442387,
-                "r2": 0.86788010597229,
-                "score": -0.4167355080825769
+                "rmse": 0.4126309532139743,
+                "mae": 0.2534493494134811,
+                "r2": 0.8694161587773418,
+                "score": -0.4126309532139743
             },
             "test": {
-                "rmse": 0.4254241989319216,
-                "mae": 0.2580213115794727,
-                "r2": 0.8661200404167175,
-                "score": -0.4254241989319216
+                "rmse": 0.40711935343331995,
+                "mae": 0.25423846386472704,
+                "r2": 0.8728896473803667,
+                "score": -0.40711935343331995
             }
         },
-        "time": "0:00:36",
+        "time": "0:01:18",
         "chunk_size": null,
         "eval_batch_size": 32768,
-        "trial_id": 22,
-        "tuning_time": "0:17:21"
+        "trial_id": 71,
+        "tuning_time": "1:51:40"
     },
-    "time": "0:21:10",
-    "n_completed_trials": 30
+    "time": "2:26:18",
+    "n_completed_trials": 100
 }

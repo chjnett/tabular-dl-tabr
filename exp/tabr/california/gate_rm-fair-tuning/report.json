@@ -24,32 +24,22 @@
                 "y_policy": "standard"
             },
             "model": {
+                "type": "gate_rm",
                 "num_embeddings": null,
-                "d_main": [
+                "d_embedding": [
                     "_tune_",
                     "int",
                     96,
                     384
                 ],
+                "n_layers": 1,
+                "n_ensembles": 1,
                 "context_dropout": [
                     "_tune_",
                     "uniform",
                     0.0,
                     0.6
-                ],
-                "d_multiplier": 2.0,
-                "encoder_n_blocks": 0,
-                "predictor_n_blocks": 1,
-                "mixer_normalization": "auto",
-                "dropout0": [
-                    "_tune_",
-                    "uniform",
-                    0.0,
-                    0.6
-                ],
-                "dropout1": 0.0,
-                "normalization": "LayerNorm",
-                "activation": "ReLU"
+                ]
             },
             "optimizer": {
                 "type": "AdamW",
@@ -89,53 +79,48 @@
                 "y_policy": "standard"
             },
             "model": {
+                "type": "gate_rm",
                 "num_embeddings": null,
-                "d_main": 346,
-                "context_dropout": 0.4268958793333497,
-                "d_multiplier": 2.0,
-                "encoder_n_blocks": 0,
-                "predictor_n_blocks": 1,
-                "mixer_normalization": "auto",
-                "dropout0": 0.5318011312033046,
-                "dropout1": 0.0,
-                "normalization": "LayerNorm",
-                "activation": "ReLU"
+                "d_embedding": 254,
+                "n_layers": 1,
+                "n_ensembles": 1,
+                "context_dropout": 0.4291136198234517
             },
             "optimizer": {
                 "type": "AdamW",
-                "lr": 0.0006053907324479423,
-                "weight_decay": 7.603128562498431e-05
+                "lr": 0.00024834578223029884,
+                "weight_decay": 0.0
             }
         },
-        "n_parameters": 1085057,
+        "n_parameters": 1943356,
         "prediction_type": null,
-        "best_epoch": 41,
+        "best_epoch": 21,
         "metrics": {
             "train": {
-                "rmse": 0.38154561493995526,
-                "mae": 0.24297940703603516,
-                "r2": 0.8905625343322754,
-                "score": -0.38154561493995526
+                "rmse": 0.5012069192855269,
+                "mae": 0.34923842256722537,
+                "r2": 0.811154305934906,
+                "score": -0.5012069192855269
             },
             "val": {
-                "rmse": 0.4167355080825769,
-                "mae": 0.2597620652442387,
-                "r2": 0.86788010597229,
-                "score": -0.4167355080825769
+                "rmse": 0.5173319974974006,
+                "mae": 0.35621116469945235,
+                "r2": 0.7963961362838745,
+                "score": -0.5173319974974006
             },
             "test": {
-                "rmse": 0.4254241989319216,
-                "mae": 0.2580213115794727,
-                "r2": 0.8661200404167175,
-                "score": -0.4254241989319216
+                "rmse": 0.5139953887703612,
+                "mae": 0.3461912486330547,
+                "r2": 0.8045706748962402,
+                "score": -0.5139953887703612
             }
         },
-        "time": "0:00:36",
+        "time": "0:20:10",
         "chunk_size": null,
         "eval_batch_size": 32768,
-        "trial_id": 22,
-        "tuning_time": "0:17:21"
+        "trial_id": 0,
+        "tuning_time": "0:22:58"
     },
-    "time": "0:21:10",
-    "n_completed_trials": 30
+    "time": "0:23:00",
+    "n_completed_trials": 1
 }
